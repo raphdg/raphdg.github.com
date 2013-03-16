@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: luks, | Linux. Programming. Minimalism.]]></title>
+  <link href="http://raphdg.github.com/blog/categories/luks/atom.xml" rel="self"/>
+  <link href="http://raphdg.github.com/"/>
+  <updated>2013-03-16T22:30:36+01:00</updated>
+  <id>http://raphdg.github.com/</id>
+  <author>
+    <name><![CDATA[Raphael De Giusti]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[Install ArchLinux on encrypted partition - LUKS on LVM]]></title>
+    <link href="http://raphdg.github.com/blog/2013/03/16/classic-first-post/"/>
+    <updated>2013-03-16T21:59:00+01:00</updated>
+    <id>http://raphdg.github.com/blog/2013/03/16/classic-first-post</id>
+    <content type="html"><![CDATA[<p>Load keyboard layout. I'm belgian on an azerty keyboard.
+<code>
+loadkeys be-latin1
+</code>
+Partitioning your /dev/sda drive:</p>
+
+<ul>
+<li>/dev/sda1 for the boot partition (200M). Set it to bootable.</li>
+<li>/dev/sda2 for the rest
+<code>
+fdisk /dev/sda
+</code>
+Ext2 is enough for the /boot partition.
+<code>
+mkfs.ext2 /dev/sda1
+</code>
+Time to encrypt ! This is for lvm on LUKS
+<code>
+modprobe dm-mod
+cryptsetup -c aes-xts-plain -s 512 luksFormat /dev/sda2
+cryptsetup luksOpen /dev/sda2 sda2
+</code>
+Create the physical volume. The <code>--dataalignment</code> option is for SSDs, according to <a href="https://wiki.archlinux.org/index.php/Lvm">https://wiki.archlinux.org/index.php/Lvm</a>
+<code>
+pvcreate --dataalignment 1m /dev/mapper/sda2
+</code>
+Volume group and logical volumes
+<code>
+vgcreate main /dev/mapper/sda2
+lvcreate -L 80GB -n root main
+lvcreate -L 8GB -n swap main
+lvcreate -l 100%FREE -n home main
+</code>
+And their according filesystems
+<code>
+mkswap /dev/mapper/main-swap
+mkfs.ext4 /dev/mapper/main-root
+mkfs.ext4 /dev/mapper/main-home
+</code>
+In order to install the filesystem, we need to mount our partitions.
+<code>
+mkdir /mnt/{boot,home}
+mount /dev/mapper/main-root /mnt
+mount /dev/sda1 /mnt/boot
+mount /dev/mapper/main-home /mnt/home
+</code>
+Install the system
+<code>
+pacstrap /mnt base base-devel grub-bios
+</code>
+Generate fstab of the future filesystem.
+<code>
+genfstab -p -U /mnt &gt; /mnt/etc/fstab
+</code>
+Now that the filesystem is installed on mounted partitions, we can start
+adjusting some settings for the system to be usable.</li>
+</ul>
+
+
+<p>Set the locale by uncommenting the line in the <code>locale.gen</code> file.
+I chose en_US.UTF-8
+<code>
+vi /etc/locale.gen
+locale-gen
+</code></p>
+
+<p>Set the <code>/etc/locale.conf</code> content:
+<code>
+LANG=en_US.UTF-8
+LC_COLLATE="C"
+</code>
+Customize a bit the virtual console in <code>/etc/vconsole.conf</code>:
+<code>
+KEYMAP="be-latin1"
+FONT=Lat2-Terminus16
+FONT_MAP=
+</code>
+Set the timezone:
+<code>
+ln -s /usr/share/zoneinfo/Europe/Brussels /etc/localtime
+</code>
+Set the hostname:
+<code>
+echo arch &gt; /etc/hostname
+</code>
+In order to build a proper initrd for our encrypted system, some additional
+hooks need to be specified in the <code>/etc/mkinitrd.conf</code> file. Find the <code>HOOKS</code>
+variable and add <code>keymap encrypt lvm2</code> before <code>filesystems</code>.
+It should look like this:
+<code>
+HOOKS="base udev autodetect modconf block keymap encrypt lvm2 filesystems keyboard fsck"
+</code>
+Generate the initrd
+<code>
+mkinitcpio -p linux
+</code>
+Let's configure GRUB. Edit the <code>/etc/default/grub</code> file and set the <code>GRUB_CMDLINE_LINUX</code> variable. If you're not using a SSD, you can omit the <code>:allow-discards</code> setting
+<code>
+GRUB_CMDLINE_LINUX="cryptdevice=/dev/sda2:main:allow-discards"
+</code>
+Generate the GRUB config and install it:
+<code>
+grub-mkconfig -o /boot/grub/grub.cfg
+grub-install /dev/sda
+</code>
+Change the root password and exit:
+<code>
+passwd
+exit
+</code>
+Unmount and reboot:
+<code>
+umount /mnt/boot
+umount /mnt/home
+umount /mnt
+reboot
+</code>
+Could be handy to edit lvm partitions later:
+<code>
+cryptsetup luksOpen /dev/sd??
+sudo pvscan
+sudo vgscan
+sudo lvscan
+sudo vgchange -a y
+</code></p>
+]]></content>
+  </entry>
+  
+</feed>
